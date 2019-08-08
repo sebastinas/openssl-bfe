@@ -4822,8 +4822,10 @@ int ssl_derive(SSL *s, EVP_PKEY *privkey, EVP_PKEY *pubkey, int gensecret)
             /*
              * If we are resuming then we already generated the early secret
              * when we created the ClientHello, so don't recreate it.
+             *
+             * Also, if we have an early secret from fs-0RTT KEX, use it.
              */
-            if (!s->hit)
+            if (!s->hit && !(s->ext.fs_0rtt_kex.state == FS_0RTT_KEX_STATE_OK || s->ext.fs_0rtt_kex.state == FS_0RTT_KEX_STATE_KEY_SENT))
                 rv = tls13_generate_secret(s, ssl_handshake_md(s), NULL, NULL,
                                            0,
                                            (unsigned char *)&s->early_secret);

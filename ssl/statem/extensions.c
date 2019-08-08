@@ -56,6 +56,7 @@ static int final_sig_algs(SSL *s, unsigned int context, int sent);
 static int final_early_data(SSL *s, unsigned int context, int sent);
 static int final_maxfragmentlen(SSL *s, unsigned int context, int sent);
 static int init_post_handshake_auth(SSL *s, unsigned int context);
+static int fs_0rtt_kex_final(SSL *s, unsigned int context, int sent);
 
 /* Structure to define a built-in extension */
 typedef struct extensions_definition_st {
@@ -321,6 +322,22 @@ static const EXTENSION_DEFINITION ext_defs[] = {
         | SSL_EXT_TLS1_3_ONLY,
         init_psk_kex_modes, tls_parse_ctos_psk_kex_modes, NULL, NULL,
         tls_construct_ctos_psk_kex_modes, NULL
+    },
+    {
+        /*
+         * Experimental extension for fs-0RTT-KEX
+         *
+         * This extension needs to before the EarlyData extension so that keys can be set up before
+         * hand. It also needs to be fore the KeyShare extensions.
+         */
+        TLSEXT_TYPE_fs_0rtt_kex,
+        SSL_EXT_CLIENT_HELLO | SSL_EXT_TLS1_3_SERVER_HELLO | SSL_EXT_TLS1_3_ONLY,
+        NULL,
+        fs_0rtt_kex_parse_c2s,
+        fs_0rtt_kex_parse_s2c,
+        fs_0rtt_kex_construct_s2c,
+        fs_0rtt_kex_construct_c2s,
+        fs_0rtt_kex_final,
     },
 #ifndef OPENSSL_NO_EC
     {
@@ -1649,7 +1666,7 @@ static int final_early_data(SSL *s, unsigned int context, int sent)
     }
 
     if (s->max_early_data == 0
-            || !s->hit
+            || (!s->hit && s->ext.fs_0rtt_kex.state != FS_0RTT_KEX_STATE_OK && s->ext.fs_0rtt_kex.state != FS_0RTT_KEX_STATE_KEY_RECEIVED)
             || s->early_data_state != SSL_EARLY_DATA_ACCEPTING
             || !s->ext.early_data_ok
             || s->hello_retry_request != SSL_HRR_NONE
@@ -1668,6 +1685,26 @@ static int final_early_data(SSL *s, unsigned int context, int sent)
     }
 
     return 1;
+}
+
+static int fs_0rtt_kex_final(SSL *s, unsigned int context, int sent)
+{
+  if (!sent)
+    return 1;
+
+  if (s->ext.fs_0rtt_kex.state == FS_0RTT_KEX_STATE_OK || s->ext.fs_0rtt_kex.state == FS_0RTT_KEX_STATE_KEY_RECEIVED) {
+    static const unsigned char tls13_aes128gcmsha256_id[] = { 0x13, 0x01 };
+
+    const SSL_CIPHER *sslcipher = SSL_CIPHER_find(s, tls13_aes128gcmsha256_id);
+    if (sslcipher == NULL) {
+      SSLfatal(s, SSL_AD_ILLEGAL_PARAMETER, SSL_F_FINAL_EARLY_DATA, SSL_R_BAD_EARLY_DATA);
+      return 0;
+    }
+
+    SSL_SESSION_set_cipher(s->session, sslcipher);
+  }
+
+  return 1;
 }
 
 static int final_maxfragmentlen(SSL *s, unsigned int context, int sent)

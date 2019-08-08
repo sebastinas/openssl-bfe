@@ -2408,3 +2408,14 @@ int tls13_restore_handshake_digest_for_pha(SSL *s)
     }
     return 1;
 }
+
+/* fs-0RTT-KEX extension processing */
+int fs_0rtt_kex_init(SSL *s, unsigned int context)
+{
+  return 0;
+}
+
+int fs_0rtt_kex_final(SSL *s, unsigned int context, int sent)
+{
+  return 0;
+}

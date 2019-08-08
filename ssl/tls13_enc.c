@@ -534,7 +534,14 @@ int tls13_change_cipher_state(SSL *s, int which)
                              ERR_R_INTERNAL_ERROR);
                     goto err;
                 }
-                sslcipher = SSL_SESSION_get0_cipher(s->psksession);
+
+                if (s->ext.fs_0rtt_kex.state == FS_0RTT_KEX_STATE_OK && sslcipher == NULL) {
+                  //TODO
+                  static const unsigned char tls13_aes128gcmsha256_id[] = { 0x13, 0x01 };
+                  sslcipher = SSL_CIPHER_find(s, tls13_aes128gcmsha256_id);
+                } else {
+                  sslcipher = SSL_SESSION_get0_cipher(s->psksession);
+                }
             }
             if (sslcipher == NULL) {
                 SSLfatal(s, SSL_AD_INTERNAL_ERROR,

@@ -746,6 +746,17 @@ EXT_RETURN tls_construct_ctos_early_data(SSL *s, WPACKET *pkt,
     if (s->hello_retry_request == SSL_HRR_PENDING)
         handmd = ssl_handshake_md(s);
 
+    /* If fs-0RTT KEX is used, use its session. */
+    if (s->ext.fs_0rtt_kex.state == FS_0RTT_KEX_STATE_KEY_SENT ||
+        s->ext.fs_0rtt_kex.state == FS_0RTT_KEX_STATE_OK) {
+      psksess = s->ext.fs_0rtt_kex.session;
+      s->ext.fs_0rtt_kex.session = NULL;
+
+      unsigned int len = 0;
+      id = SSL_SESSION_get_id(psksess, &len);
+      idlen = len;
+    }
+
     if (s->psk_use_session_cb != NULL
             && (!s->psk_use_session_cb(s, handmd, &id, &idlen, &psksess)
                 || (psksess != NULL
@@ -1924,11 +1935,13 @@ int tls_parse_stoc_early_data(SSL *s, PACKET *pkt, unsigned int context,
     }
 
     if (!s->ext.early_data_ok
-            || !s->hit) {
+            || (!s->hit && !(s->ext.fs_0rtt_kex.state == FS_0RTT_KEX_STATE_OK || s->ext.fs_0rtt_kex.state == FS_0RTT_KEX_STATE_KEY_SENT))) {
         /*
          * If we get here then we didn't send early data, or we didn't resume
          * using the first identity, or the SNI/ALPN is not consistent so the
          * server should not be accepting it.
+         *
+         * … or fs-0RTT KEX was not performed
          */
         SSLfatal(s, SSL_AD_ILLEGAL_PARAMETER, SSL_F_TLS_PARSE_STOC_EARLY_DATA,
                  SSL_R_BAD_EXTENSION);
@@ -1998,4 +2011,129 @@ int tls_parse_stoc_psk(SSL *s, PACKET *pkt, unsigned int context, X509 *x,
 #endif
 
     return 1;
+}
+
+/* fs-0RTT-KEX extension processing */
+static uint64_t get_interval(void)
+{
+  static const uint64_t epoch_2019 = 1546300800;
+
+  uint64_t seconds_since_epoch = time(NULL);
+  /* split intervals into hours since 2019-01-01 0:00:00 UTC */
+  return (seconds_since_epoch - epoch_2019) / 3600;
+}
+
+int fs_0rtt_kex_parse_s2c(SSL *s, PACKET *pkt, unsigned int context, X509 *x,
+                          size_t chainidx)
+{
+  unsigned int state = 0;
+
+  if (PACKET_remaining(pkt) != 1 || !PACKET_get_1(pkt, &state)) {
+    SSLfatal(s, SSL_AD_DECODE_ERROR, SSL_F_TLS13_PROCESS_FS_0RTT_KEX,
+             SSL_R_BAD_EXTENSION);
+    s->ext.fs_0rtt_kex.state = FS_0RTT_KEX_STATE_ERROR;
+    return 0;
+  }
+
+  /* Accept if key was sent */
+  if (s->ext.fs_0rtt_kex.state == FS_0RTT_KEX_STATE_KEY_SENT && state == FS_0RTT_KEX_STATE_OK) {
+    s->ext.fs_0rtt_kex.state = FS_0RTT_KEX_STATE_OK;
+    return 1;
+  }
+
+  s->ext.fs_0rtt_kex.state = FS_0RTT_KEX_STATE_ERROR;
+  return 0;
+}
+
+static int WPACKET_put_bytes_u64(WPACKET* pkt, uint64_t val) {
+  val = htobe64(val);
+  if (!WPACKET_memcpy(pkt, &val, sizeof(uint64_t))) {
+    return 0;
+  }
+
+  return 1;
+}
+
+EXT_RETURN fs_0rtt_kex_construct_c2s(SSL *s, WPACKET *pkt, unsigned int context,
+                                     X509 *x, size_t chainidx)
+{
+  if (!s->ctx->ext.fs_0rtt_kex.enabled) {
+    return EXT_RETURN_NOT_SENT;
+  }
+
+  if (!s->ext.hostname) {
+    /* no hostname available, so cannot lookup certificate */
+    return EXT_RETURN_NOT_SENT;
+  }
+
+  /* look up certificate by hostname */
+  FS0RTT_pkey_t* pkey = NULL;
+  for (size_t idx = 0; idx < s->ctx->ext.fs_0rtt_kex.pkeys_len; ++idx) {
+    if (FS0RTT_pkey_matches_hostname(s->ctx->ext.fs_0rtt_kex.pkeys[idx], s->ext.hostname)) {
+      pkey = s->ctx->ext.fs_0rtt_kex.pkeys[idx];
+      break;
+    }
+  }
+
+  if (!pkey) {
+    /* no key available, so cannot send */
+    return EXT_RETURN_NOT_SENT;
+  }
+
+  /* generate random key and run encapsulation */
+  uint8_t* ctxt           = NULL;
+  size_t ctxt_size        = 0;
+  const uint64_t interval = get_interval();
+
+  const int res = FS0RTT_enc(pkey, interval, &ctxt, &ctxt_size, &s->ext.fs_0rtt_kex.key,
+                             &s->ext.fs_0rtt_kex.key_size);
+  if (res) {
+    SSLfatal(s, SSL_AD_INTERNAL_ERROR, SSL_F_TLS13_PROCESS_FS_0RTT_KEX, ERR_R_INTERNAL_ERROR);
+    return EXT_RETURN_FAIL;
+  }
+
+  /* setup session */
+  static const unsigned char tls13_aes128gcmsha256_id[] = { 0x13, 0x01 };
+  const SSL_CIPHER* cipher = SSL_CIPHER_find(s, tls13_aes128gcmsha256_id);
+  if (cipher == NULL) {
+    free(ctxt);
+    SSLfatal(s, SSL_AD_INTERNAL_ERROR, SSL_F_TLS13_PROCESS_FS_0RTT_KEX, ERR_R_INTERNAL_ERROR);
+    return EXT_RETURN_FAIL;
+  }
+
+  SSL_SESSION* sess = SSL_SESSION_new();
+  if (sess == NULL ||
+      !SSL_SESSION_set1_master_key(sess, s->ext.fs_0rtt_kex.key, s->ext.fs_0rtt_kex.key_size) ||
+      !SSL_SESSION_set_cipher(sess, cipher) ||
+      !SSL_SESSION_set_protocol_version(sess, TLS1_3_VERSION) ||
+      !SSL_SESSION_set1_id(sess, tls13_aes128gcmsha256_id, sizeof(tls13_aes128gcmsha256_id))) {
+    SSL_SESSION_free(sess);
+    free(ctxt);
+    SSLfatal(s, SSL_AD_INTERNAL_ERROR, SSL_F_TLS13_PROCESS_FS_0RTT_KEX, ERR_R_INTERNAL_ERROR);
+    return EXT_RETURN_FAIL;
+  }
+
+  /*
+   * serialize extension:
+   *    uint64 interval;
+   *    uint8_t ctxt[ctxt_size];
+   */
+  if (!WPACKET_put_bytes_u16(pkt, TLSEXT_TYPE_fs_0rtt_kex)
+      || !WPACKET_start_sub_packet_u16(pkt)
+      || !WPACKET_put_bytes_u64(pkt, interval)
+      || !WPACKET_sub_memcpy_u16(pkt, ctxt, ctxt_size)
+      || !WPACKET_close(pkt)) {
+    SSL_SESSION_free(sess);
+    free(ctxt);
+    SSLfatal(s, SSL_AD_INTERNAL_ERROR, SSL_F_TLS13_PROCESS_FS_0RTT_KEX, ERR_R_INTERNAL_ERROR);
+    return EXT_RETURN_FAIL;
+  }
+  free(ctxt);
+
+  /* set session */
+  s->ext.fs_0rtt_kex.session = sess;
+  /* sent a valid key */
+  s->ext.fs_0rtt_kex.state = FS_0RTT_KEX_STATE_KEY_SENT;
+
+  return EXT_RETURN_SENT;
 }

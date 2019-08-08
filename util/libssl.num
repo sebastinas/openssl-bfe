@@ -498,3 +498,6 @@ SSL_CTX_get_recv_max_early_data         498	1_1_1	EXIST::FUNCTION:
 SSL_CTX_set_recv_max_early_data         499	1_1_1	EXIST::FUNCTION:
 SSL_CTX_set_post_handshake_auth         500	1_1_1	EXIST::FUNCTION:
 SSL_get_signature_type_nid              501	1_1_1a	EXIST::FUNCTION:
+SSL_CTX_enable_fs_0rtt_kex              502	1_1_1d	EXIST::FUNCTION:
+SSL_CTX_load_fs_0rtt_kex_pkey_from_file 503	1_1_1d	EXIST::FUNCTION:
+SSL_CTX_load_fs_0rtt_kex_skey_pkey_from_file 504	1_1_1d	EXIST::FUNCTION:

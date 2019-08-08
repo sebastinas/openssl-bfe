@@ -649,6 +649,12 @@ int SSL_clear(SSL *s)
 
     RECORD_LAYER_clear(&s->rlayer);
 
+    /* reset fs-0RTT KEX state */
+    s->ext.fs_0rtt_kex.state = FS_0RTT_KEX_STATE_NONE;
+    free(s->ext.fs_0rtt_kex.key);
+    s->ext.fs_0rtt_kex.key = NULL;
+    s->ext.fs_0rtt_kex.key_size = 0;
+
     return 1;
 }
 
@@ -3166,6 +3172,15 @@ void SSL_CTX_free(SSL_CTX *a)
 
     CRYPTO_THREAD_lock_free(a->lock);
 
+    if (a->ext.fs_0rtt_kex.pkeys_len) {
+      for (size_t s = a->ext.fs_0rtt_kex.pkeys_len; s; --s) {
+        FS0RTT_free_pkey(a->ext.fs_0rtt_kex.pkeys[s - 1]);
+      }
+      OPENSSL_free(a->ext.fs_0rtt_kex.pkeys);
+    }
+    FS0RTT_free_pkey(a->ext.fs_0rtt_kex.pkey);
+    FS0RTT_free_skey(a->ext.fs_0rtt_kex.skey);
+
     OPENSSL_free(a);
 }
 
@@ -5591,4 +5606,47 @@ void SSL_set_allow_early_data_cb(SSL *s,
 {
     s->allow_early_data_cb = cb;
     s->allow_early_data_cb_data = arg;
+}
+
+/* fs-0RTT KEX functions */
+
+void SSL_CTX_enable_fs_0rtt_kex(SSL_CTX* ctx, int enable) {
+  ctx->ext.fs_0rtt_kex.enabled = enable;
+}
+
+int SSL_CTX_load_fs_0rtt_kex_pkey_from_file(SSL_CTX* ctx, const char* file) {
+  FS0RTT_pkey_t* pkey = FS0RTT_load_pkey_from_file(file);
+  if (!pkey) {
+    return 0;
+  }
+
+  FS0RTT_pkey_t** tmp = OPENSSL_realloc(
+      ctx->ext.fs_0rtt_kex.pkeys, sizeof(FS0RTT_pkey_t*) * (ctx->ext.fs_0rtt_kex.pkeys_len + 1));
+  if (!tmp) {
+    FS0RTT_free_pkey(pkey);
+    return 0;
+  }
+
+  ctx->ext.fs_0rtt_kex.pkeys = tmp;
+  ++ctx->ext.fs_0rtt_kex.pkeys_len;
+
+  ctx->ext.fs_0rtt_kex.pkeys[ctx->ext.fs_0rtt_kex.pkeys_len - 1] = pkey;
+  return 1;
+}
+
+int SSL_CTX_load_fs_0rtt_kex_skey_pkey_from_file(SSL_CTX* ctx, const char* file) {
+  FS0RTT_pkey_t* pkey = NULL;
+  FS0RTT_skey_t* skey = NULL;
+
+  if (FS0RTT_load_skey_pkey_from_file(file, &skey, &pkey)) {
+    return 0;
+  }
+
+  FS0RTT_free_skey(ctx->ext.fs_0rtt_kex.skey);
+  ctx->ext.fs_0rtt_kex.skey = skey;
+
+  FS0RTT_free_pkey(ctx->ext.fs_0rtt_kex.pkey);
+  ctx->ext.fs_0rtt_kex.pkey = pkey;
+
+  return 1;
 }

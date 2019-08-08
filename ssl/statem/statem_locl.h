@@ -414,6 +414,17 @@ int tls_parse_stoc_cookie(SSL *s, PACKET *pkt, unsigned int context, X509 *x,
 int tls_parse_stoc_psk(SSL *s, PACKET *pkt, unsigned int context, X509 *x,
                        size_t chainidx);
 
+/* fs-0RTT-KEX extension processing */
+int fs_0rtt_kex_init(SSL *s, unsigned int context);
+int fs_0rtt_kex_parse_c2s(SSL *s, PACKET *pkt, unsigned int context, X509 *x,
+                          size_t chainidx);
+int fs_0rtt_kex_parse_s2c(SSL *s, PACKET *pkt, unsigned int context, X509 *x,
+                          size_t chainidx);
+EXT_RETURN fs_0rtt_kex_construct_s2c(SSL *s, WPACKET *pkt, unsigned int context,
+                                     X509 *x, size_t chainidx);
+EXT_RETURN fs_0rtt_kex_construct_c2s(SSL *s, WPACKET *pkt, unsigned int context,
+                                     X509 *x, size_t chainidx);
+
 int tls_handle_alpn(SSL *s);
 
 int tls13_save_handshake_digest_for_pha(SSL *s);

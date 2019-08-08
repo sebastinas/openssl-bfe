@@ -153,6 +153,9 @@ extern "C" {
 #  define TLSEXT_TYPE_next_proto_neg              13172
 # endif
 
+/* Experimental extension for fs-0RTT-KEx */
+# define TLSEXT_TYPE_fs_0rtt_kex                 60
+
 /* NameType value from RFC3546 */
 # define TLSEXT_NAMETYPE_host_name 0
 /* status request value from RFC3546 */

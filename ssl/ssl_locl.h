@@ -28,6 +28,7 @@
 # include <openssl/async.h>
 # include <openssl/symhacks.h>
 # include <openssl/ct.h>
+# include <openssl/fs0rttkex.h>
 # include "record/record.h"
 # include "statem/statem.h"
 # include "packet_locl.h"
@@ -641,6 +642,16 @@ typedef enum {
  */
 # define EARLY_DATA_CIPHERTEXT_OVERHEAD ((6 * (EVP_GCM_TLS_TAG_LEN + 1)) + 2)
 
+typedef enum {
+  FS_0RTT_KEX_STATE_NONE,
+  FS_0RTT_KEX_STATE_OK, /* fs-0RTT KEX successful */
+  FS_0RTT_KEX_STATE_KEY_SENT, /* client sent a key */
+  FS_0RTT_KEX_STATE_KEY_RECEIVED, /* server received a key */
+  FS_0RTT_KEX_STATE_INVALID_CTX_RECEIVED, /* server was unable to decrypt the ciphertext */
+  FS_0RTT_KEX_STATE_NOT_SUPPORTED, /* received extensions, but not supported/enabled */
+  FS_0RTT_KEX_STATE_ERROR /* some error occurred */
+} SSL_FS0RRT_KEX_STATE;
+
 /*
  * The allowance we have between the client's calculated ticket age and our own.
  * We allow for 10 seconds (units are in ms). If a ticket is presented and the
@@ -710,6 +721,7 @@ typedef enum tlsext_index_en {
     TLSEXT_IDX_signature_algorithms,
     TLSEXT_IDX_supported_versions,
     TLSEXT_IDX_psk_kex_modes,
+    TLSEXT_IDX_fs_0rtt_kex,
     TLSEXT_IDX_key_share,
     TLSEXT_IDX_cookie,
     TLSEXT_IDX_cryptopro_bug,
@@ -999,6 +1011,20 @@ struct ssl_ctx_st {
 # endif
 
         unsigned char cookie_hmac_key[SHA256_DIGEST_LENGTH];
+
+        /*
+         * Settings for the fs-0RTT-KEX extension
+         */
+        struct {
+          int enabled;
+
+          /* server-side secret and public key */
+          FS0RTT_skey_t* skey;
+          FS0RTT_pkey_t* pkey;
+          /* list of public keys */
+          FS0RTT_pkey_t** pkeys;
+          size_t pkeys_len;
+        } fs_0rtt_kex;
     } ext;
 
 # ifndef OPENSSL_NO_PSK
@@ -1365,6 +1391,17 @@ struct ssl_st {
          * selected.
          */
         int tick_identity;
+
+        /*
+         * Per-session state of fs-0RTT KEX
+         */
+        struct {
+          int state;
+          /* the session */
+          SSL_SESSION* session;
+          uint8_t* key;
+          size_t key_size;
+        } fs_0rtt_kex;
     } ext;
 
     /*

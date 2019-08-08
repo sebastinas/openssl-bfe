@@ -489,6 +489,7 @@ static const ssl_trace_tbl ssl_exts_tbl[] = {
 # ifndef OPENSSL_NO_NEXTPROTONEG
     {TLSEXT_TYPE_next_proto_neg, "next_proto_neg"},
 # endif
+    {TLSEXT_TYPE_fs_0rtt_kex, "fs_0rtt_kex"},
 };
 
 static const ssl_trace_tbl ssl_groups_tbl[] = {

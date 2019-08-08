@@ -2432,6 +2432,10 @@ void SSL_set_allow_early_data_cb(SSL *s,
                                  SSL_allow_early_data_cb_fn cb,
                                  void *arg);
 
+void SSL_CTX_enable_fs_0rtt_kex(SSL_CTX* ctx, int enable);
+int SSL_CTX_load_fs_0rtt_kex_pkey_from_file(SSL_CTX* ctx, const char* file);
+int SSL_CTX_load_fs_0rtt_kex_skey_pkey_from_file(SSL_CTX* ctx, const char* file);
+
 # ifdef  __cplusplus
 }
 # endif
