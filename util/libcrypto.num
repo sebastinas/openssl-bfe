@@ -4582,3 +4582,16 @@ OPENSSL_INIT_set_config_file_flags      4535	1_1_1b	EXIST::FUNCTION:STDIO
 EVP_PKEY_get0_engine                    4536	1_1_1c	EXIST::FUNCTION:ENGINE
 X509_get0_authority_serial              4537	1_1_1d	EXIST::FUNCTION:
 X509_get0_authority_issuer              4538	1_1_1d	EXIST::FUNCTION:
+FS0RTT_new_pkey                         4539	1_1_1d	EXIST::FUNCTION:
+FS0RTT_pkey_matches_hostname            4540	1_1_1d	EXIST::FUNCTION:
+FS0RTT_free_pkey                        4541	1_1_1d	EXIST::FUNCTION:
+FS0RTT_new_skey                         4542	1_1_1d	EXIST::FUNCTION:
+FS0RTT_free_skey                        4543	1_1_1d	EXIST::FUNCTION:
+FS0RTT_enc                              4544	1_1_1d	EXIST::FUNCTION:
+FS0RTT_dec                              4545	1_1_1d	EXIST::FUNCTION:
+FS0RTT_punc_interval                    4546	1_1_1d	EXIST::FUNCTION:
+FS0RTT_load_pkey_from_file              4547	1_1_1d	EXIST::FUNCTION:
+FS0RTT_load_skey_pkey_from_file         4548	1_1_1d	EXIST::FUNCTION:
+FS0RTT_save_pkey_to_file                4549	1_1_1d	EXIST::FUNCTION:
+FS0RTT_save_skey_pkey_to_file           4550	1_1_1d	EXIST::FUNCTION:
+FS0RTT_generate_keys                    4551	1_1_1d	EXIST::FUNCTION:

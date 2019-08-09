@@ -1,0 +1,5 @@
+LIBS=../../libcrypto
+SOURCE[../../libcrypto]=\
+        wrapper.c
+DEPEND[../../libcrypto]=\
+        /usr/lib/x86_64-linux-gnu/libbfebf
