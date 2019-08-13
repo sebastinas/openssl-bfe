@@ -87,6 +87,7 @@ my %cmd_disabler = (
     dhparam  => "dh",
     ecparam  => "ec",
     pkcs12   => "des",
+    "fs0rtt" => "fs0rtt",
 );
 
 print "#ifdef INCLUDE_FUNCTION_TABLE\n";
