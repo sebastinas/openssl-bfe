@@ -3091,6 +3091,26 @@ SSL_CTX *SSL_CTX_new(const SSL_METHOD *meth)
 
     ssl_ctx_system_config(ret);
 
+    /*
+     * XXX: Load fs-0RTT keys if set via environment variables. This makes it easier to enable fs-0RTT
+     * without adapting applications to enable it and load keys.
+     * */
+    const char* fs0rtt_skey = getenv("FS0RTT_SKEY");
+    if (meth->ssl_accept != ssl_undefined_function && fs0rtt_skey) {
+      const int res = SSL_CTX_load_fs_0rtt_kex_skey_pkey_from_file(ret, fs0rtt_skey);
+      if (res) {
+        SSL_CTX_enable_fs_0rtt_kex(ret, 1);
+      }
+    }
+
+    const char* fs0rtt_pkey = getenv("FS0RTT_PKEY");
+    if (meth->ssl_accept == ssl_undefined_function && fs0rtt_pkey) {
+      const int res = SSL_CTX_load_fs_0rtt_kex_pkey_from_file(ret, fs0rtt_pkey);
+      if (res) {
+        SSL_CTX_enable_fs_0rtt_kex(ret, 1);
+      }
+    }
+
     return ret;
  err:
     SSLerr(SSL_F_SSL_CTX_NEW, ERR_R_MALLOC_FAILURE);
