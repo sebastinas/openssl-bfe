@@ -598,7 +598,9 @@ typedef enum OPTION_choice {
     OPT_DANE_TLSA_RRDATA, OPT_DANE_EE_NO_NAME,
     OPT_ENABLE_PHA,
     OPT_SCTP_LABEL_BUG,
-    OPT_R_ENUM
+    OPT_R_ENUM,
+    OPT_FS_0RTT_KEX_ENABLE,
+    OPT_FS_0RTT_KEX_KEY
 } OPTION_CHOICE;
 
 const OPTIONS s_client_options[] = {
@@ -790,6 +792,9 @@ const OPTIONS s_client_options[] = {
     {"keylogfile", OPT_KEYLOG_FILE, '>', "Write TLS secrets to file"},
     {"early_data", OPT_EARLY_DATA, '<', "File to send as early data"},
     {"enable_pha", OPT_ENABLE_PHA, '-', "Enable post-handshake-authentication"},
+    {"fs_0rtt_kex_enable", OPT_FS_0RTT_KEX_ENABLE, '-', "enable fs-0RTT KEX"},
+    /* TODO: implement key store */
+    {"fs_0rtt_kex_key", OPT_FS_0RTT_KEX_KEY, 's', "public key for fs-0RTT KEX"},
     {NULL, OPT_EOF, 0x00, NULL}
 };
 
@@ -982,6 +987,8 @@ int s_client_main(int argc, char **argv)
 #ifndef OPENSSL_NO_SCTP
     int sctp_label_bug = 0;
 #endif
+    int fs_0rtt_kex_enable = 0;
+    const char* fs_0rtt_kex_key = NULL;
 
     FD_ZERO(&readfds);
     FD_ZERO(&writefds);
@@ -1507,6 +1514,14 @@ int s_client_main(int argc, char **argv)
         case OPT_ENABLE_PHA:
             enable_pha = 1;
             break;
+        case OPT_FS_0RTT_KEX_KEY:
+            fs_0rtt_kex_key = opt_arg();
+        case OPT_FS_0RTT_KEX_ENABLE:
+            fs_0rtt_kex_enable = 1;
+            /* also increase TLS version to 1.3 */
+            min_version = TLS1_3_VERSION;
+            max_version = TLS1_3_VERSION;
+            break;
         }
     }
     if (count4or6 >= 2) {
@@ -1956,6 +1971,17 @@ int s_client_main(int argc, char **argv)
 
     if (set_keylog_file(ctx, keylog_file))
         goto end;
+
+    if (fs_0rtt_kex_enable) {
+      SSL_CTX_enable_fs_0rtt_kex(ctx, fs_0rtt_kex_enable);
+      if (fs_0rtt_kex_key) {
+        const int ret = SSL_CTX_load_fs_0rtt_kex_pkey_from_file(ctx, fs_0rtt_kex_key);
+        if (!ret) {
+          BIO_printf(bio_err, "Cannot load keys for fs-0RTT KEX from '%s'\n", fs_0rtt_kex_key);
+          goto end;
+        }
+      }
+    }
 
     con = SSL_new(ctx);
     if (con == NULL)

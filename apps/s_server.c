@@ -755,7 +755,9 @@ typedef enum OPTION_choice {
     OPT_R_ENUM,
     OPT_S_ENUM,
     OPT_V_ENUM,
-    OPT_X_ENUM
+    OPT_X_ENUM,
+    OPT_FS_0RTT_KEX_ENABLE,
+    OPT_FS_0RTT_KEX_KEY
 } OPTION_CHOICE;
 
 const OPTIONS s_server_options[] = {
@@ -966,6 +968,8 @@ const OPTIONS s_server_options[] = {
      "The number of TLSv1.3 session tickets that a server will automatically  issue" },
     {"anti_replay", OPT_ANTI_REPLAY, '-', "Switch on anti-replay protection (default)"},
     {"no_anti_replay", OPT_NO_ANTI_REPLAY, '-', "Switch off anti-replay protection"},
+    {"fs_0rtt_kex_enable", OPT_FS_0RTT_KEX_ENABLE, '-', "enable fs-0RTT KEX"},
+    {"fs_0rtt_kex_key", OPT_FS_0RTT_KEX_KEY, 's', "public key and private key for fs-0RTT KEX"},
     {NULL, OPT_EOF, 0, NULL}
 };
 
@@ -1051,6 +1055,8 @@ int s_server_main(int argc, char *argv[])
 #ifndef OPENSSL_NO_SCTP
     int sctp_label_bug = 0;
 #endif
+    int fs_0rtt_kex_enable = 0;
+    char* fs_0rtt_kex_key = NULL;
 
     /* Init of few remaining global variables */
     local_argc = argc;
@@ -1594,6 +1600,15 @@ int s_server_main(int argc, char *argv[])
             early_data = 1;
             if (max_early_data == -1)
                 max_early_data = SSL3_RT_MAX_PLAIN_LENGTH;
+            break;
+        case OPT_FS_0RTT_KEX_KEY:
+            fs_0rtt_kex_key = opt_arg();
+        case OPT_FS_0RTT_KEX_ENABLE:
+            fs_0rtt_kex_enable = 1;
+            /* also increase TLS version to 1.3 */
+            min_version = TLS1_3_VERSION;
+            max_version = TLS1_3_VERSION;
+            /* also enable early data */
             break;
         }
     }
@@ -2143,6 +2158,17 @@ int s_server_main(int argc, char *argv[])
         SSL_CTX_set_max_early_data(ctx, max_early_data);
     if (recv_max_early_data >= 0)
         SSL_CTX_set_recv_max_early_data(ctx, recv_max_early_data);
+
+    if (fs_0rtt_kex_enable) {
+      SSL_CTX_enable_fs_0rtt_kex(ctx, fs_0rtt_kex_enable);
+      if (fs_0rtt_kex_key) {
+        const int ret = SSL_CTX_load_fs_0rtt_kex_skey_pkey_from_file(ctx, fs_0rtt_kex_key);
+        if (!ret) {
+          BIO_printf(bio_err, "Cannot load keys for fs-0RTT KEX from '%s'", fs_0rtt_kex_key);
+          goto end;
+        }
+      }
+    }
 
     if (rev)
         server_cb = rev_body;
